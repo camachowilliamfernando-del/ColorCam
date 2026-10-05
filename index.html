@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<title>ColorSense AI · Professional Color Analyzer</title>
+
+<!-- TensorFlow.js -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+
+<style>
+/* ============================================================
+   SISTEMA DE DISEÑO — MONOCROMÁTICO PROFESIONAL (NEGRO, GRIS, BLANCO)
+   ============================================================ */
+:root {
+    --bg-base: #000000;
+    --bg-surface: #0a0a0c;
+    --bg-card: #121216;
+    --bg-card-hover: #1a1a20;
+    --border-subtle: #22222b;
+    --border-active: #3f3f4e;
+
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+
+    --accent: #ffffff;
+    --accent-bg: #27272a;
+    --accent-hover: #3f3f46;
+    
+    --status-live: #22c55e;
+    --status-error: #ef4444;
+
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+    --radius-full: 9999px;
+
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+    
+    --shadow-deep: 0 24px 48px -12px rgba(0, 0, 0, 0.8);
+    --transition: 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0; padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.app-container {
+    width: 100%;
+    max-width: 1320px;
+    display: grid;
+    grid-template-columns: 1.3fr 0.7fr;
+    gap: 20px;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow-deep);
+}
+
+@media (max-width: 1024px) {
+    .app-container { grid-template-columns: 1fr; padding: 16px; }
+}
+
+.panel {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ENCABEZADO */
+.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-dot {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+}
+.brand-title { font-weight: 700; font-size: 1.1rem; letter-spacing: -0.3px; color: var(--text-primary); }
+.brand-subtitle { font-size: 0.72rem; color: var(--text-muted); }
+
+.badge-group { display: flex; gap: 6px; }
+.badge {
+    font-family: var(--font-mono);
+    font-size: 0.65rem; font-weight: 600; text-transform: uppercase;
+    padding: 4px 8px; border-radius: var(--radius-full);
+    background: var(--bg-card-hover); color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+}
+.badge.live { color: var(--status-live); border-color: rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.05); }
+
+/* ALERTA LOCAL */
+.alert-local {
+    display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3);
+    padding: 10px 12px; border-radius: var(--radius-sm); font-size: 0.78rem; color: #fca5a5;
+}
+.alert-local.show { display: block; }
+
+/* VISOR DE CÁMARA */
+.video-wrapper {
+    position: relative; width: 100%; aspect-ratio: 16/9; max-height: 400px;
+    background: #000; border-radius: var(--radius-sm); overflow: hidden;
+    border: 1px solid var(--border-subtle);
+}
+video { display: block; width: 100%; height: 100%; object-fit: cover; }
+canvas#overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+canvas#sample { display: none; }
+
+.camera-hud {
+    position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: 6px;
+    background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
+    padding: 4px 10px; border-radius: var(--radius-full); font-family: var(--font-mono);
+    font-size: 0.68rem; color: var(--text-secondary); border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.camera-hud .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+.camera-hud.active .dot { background: var(--status-live); box-shadow: 0 0 8px var(--status-live); }
+
+.video-placeholder {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 8px; background: var(--bg-card); text-align: center; padding: 16px;
+}
+.video-placeholder.hidden { display: none; }
+.video-placeholder svg { width: 32px; height: 32px; stroke: var(--text-muted); }
+
+/* CONTROLES */
+.controls-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; }
+@media (max-width: 600px) { .controls-grid { grid-template-columns: 1fr; } }
+
+.btn {
+    appearance: none; border: none; cursor: pointer; font-family: inherit; font-size: 0.82rem;
+    font-weight: 600; padding: 10px 16px; border-radius: var(--radius-full);
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    transition: var(--transition);
+}
+.btn-primary { background: var(--accent); color: var(--bg-base); }
+.btn-primary:hover:not(:disabled) { background: #e4e4e7; }
+.btn-secondary { background: var(--bg-card-hover); color: var(--text-primary); border: 1px solid var(--border-subtle); }
+.btn-secondary:hover:not(:disabled) { background: var(--border-subtle); border-color: var(--border-active); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* MUESTREO Y PREDICCIÓN */
+.data-grid { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; }
+.color-swatch {
+    width: 100%; aspect-ratio: 1; border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+}
+.color-specs { display: flex; flex-direction: column; gap: 3px; font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-secondary); }
+.color-specs span b { color: var(--text-primary); }
+
+.prediction-box {
+    background: var(--bg-base); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm); padding: 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.pred-header-row { display: flex; justify-content: space-between; align-items: center; }
+.pred-title { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
+.pred-main-val { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.5px; color: var(--text-primary); }
+
+.confidence-track { width: 100%; height: 4px; background: var(--border-subtle); border-radius: var(--radius-full); overflow: hidden; }
+.confidence-bar { width: 0%; height: 100%; background: var(--text-primary); transition: width 0.15s ease; }
+
+/* MÓDULO APRENDIZAJE IA */
+.learn-section { border-top: 1px solid var(--border-subtle); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.learn-input-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.input-text {
+    background: var(--bg-base); border: 1px solid var(--border-subtle); border-radius: var(--radius-full);
+    padding: 8px 14px; color: var(--text-primary); font-family: inherit; font-size: 0.82rem; outline: none;
+    transition: var(--transition);
+}
+.input-text:focus { border-color: var(--border-active); }
+
+.chips-container { display: flex; flex-wrap: wrap; gap: 6px; max-height: 75px; overflow-y: auto; }
+.chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: var(--radius-full);
+    background: var(--bg-card-hover); border: 1px solid var(--border-subtle); font-size: 0.72rem; color: var(--text-secondary);
+}
+.chip-dot { width: 8px; height: 8px; border-radius: 50%; }
+.chip-del { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.9rem; padding: 0 2px; }
+.chip-del:hover { color: var(--status-error); }
+
+/* PANEL CHATBOT */
+.chat-panel { display: flex; flex-direction: column; height: 100%; }
+.chat-messages {
+    flex: 1; min-height: 280px; max-height: 480px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 10px; padding-right: 4px;
+}
+.message { display: flex; gap: 8px; max-width: 90%; }
+.message.user { align-self: flex-end; flex-direction: row-reverse; }
+.msg-bubble {
+    background: var(--bg-base); border: 1px solid var(--border-subtle);
+    padding: 10px 12px; border-radius: var(--radius-md); font-size: 0.82rem; color: var(--text-secondary);
+}
+.message.user .msg-bubble { background: var(--bg-card-hover); color: var(--text-primary); }
+
+.chat-input-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px; }
+
+/* ESTADÍSTICAS MINIMALISTAS */
+.stats-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat-item { background: var(--bg-base); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 6px; text-align: center; }
+.stat-num { font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem; color: var(--text-primary); }
+.stat-label { font-size: 0.6rem; text-transform: uppercase; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<main class="app-container" role="application">
+
+    <!-- COLUMNA IZQUIERDA: CÁMARA, MUESTREO Y ENTRENAMIENTO -->
+    <section class="panel">
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-dot" aria-hidden="true"></div>
+                <div>
+                    <h1 class="brand-title">ColorSense AI</h1>
+                    <div class="brand-subtitle">Professional Vision Engine</div>
+                </div>
+            </div>
+            <div class="badge-group">
+                <span class="badge" id="badgeBackend">TF.js</span>
+                <span class="badge" id="badgeState">Inactivo</span>
+            </div>
+        </header>
+
+        <div class="alert-local" id="fileAlert">
+            ⚠️ Estás ejecutando desde un archivo local (<code>file://</code>). Abre este archivo mediante un servidor local (ej. Live Server) para habilitar los permisos de la cámara web.
+        </div>
+
+        <!-- Visor de Video de Alta Precisión -->
+        <div class="video-wrapper">
+            <video id="webcam" autoplay playsinline muted></video>
+            <canvas id="overlay"></canvas>
+            <canvas id="sample"></canvas>
+            
+            <div class="camera-hud" id="hudStatus">
+                <span class="dot" id="hudDot"></span>
+                <span id="hudText">Cámara en espera</span>
+            </div>
+
+            <div class="video-placeholder" id="videoPlaceholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                <div style="font-weight: 600; color: var(--text-secondary); font-size: 0.85rem;">Sistema de Visión Inactivo</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted);">Pulsa iniciar para activar el muestreo en tiempo real.</div>
+            </div>
+        </div>
+
+        <!-- Botones de Control de Cámara -->
+        <div class="controls-grid">
+            <button class="btn btn-primary" id="btnToggleCam">
+                <span aria-hidden="true">▶</span> <span id="btnCamText">Iniciar Cámara</span>
+            </button>
+            <button class="btn btn-secondary" id="btnSwitchCam" disabled title="Cambiar cámara">🔄 Voltear</button>
+            <button class="btn btn-secondary" id="btnFreeze" disabled title="Pausar frame">⏸ Pausar</button>
+        </div>
+
+        <!-- Tarjeta de Muestreo RGB/HEX/HSV -->
+        <div class="data-grid">
+            <div class="color-swatch" id="sampleSwatch" style="background: #121216;"></div>
+            <div class="color-specs">
+                <span>RGB: <b id="valRgb">rgb(0, 0, 0)</b></span>
+                <span>HEX: <b id="valHex">#000000</b></span>
+                <span>HSV: <b id="valHsv">0°, 0%, 0%</b></span>
+            </div>
+        </div>
+
+        <!-- Tarjeta de Predicción -->
+        <div class="prediction-box">
+            <div class="pred-header-row">
+                <span class="pred-title">Clasificador Neuronal</span>
+                <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-secondary);" id="confPct">0%</span>
+            </div>
+            <div class="pred-main-val" id="predMain">—</div>
+            <div class="confidence-track">
+                <div class="confidence-bar" id="confBar"></div>
+            </div>
+        </div>
+
+        <!-- Módulo de Aprendizaje IA -->
+        <div class="learn-section">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary);">Enseñar Nuevo Color</span>
+                <span style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted);" id="samplesCount">0 muestras</span>
+            </div>
+            <div class="learn-input-row">
+                <input type="text" class="input-text" id="learnInput" placeholder="Ej. Gris plomo, Blanco perla..." autocomplete="off">
+                <button class="btn btn-secondary" id="btnLearn" disabled>+ Enseñar</button>
+            </div>
+            <div class="chips-container" id="learnedChips"></div>
+            
+            <div class="stats-bar" style="margin-top: 4px;">
+                <div class="stat-item"><div class="stat-num" id="stClasses">8</div><div class="stat-label">Clases</div></div>
+                <div class="stat-item"><div class="stat-num" id="stTotalSamples">0</div><div class="stat-label">Ejemplos</div></div>
+                <div class="stat-item"><div class="stat-num" id="stFps">0</div><div class="stat-label">FPS</div></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- COLUMNA DERECHA: CHATBOT TUTOR -->
+    <section class="panel chat-panel">
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-dot" style="background: var(--text-secondary);" aria-hidden="true"></div>
+                <div>
+                    <h2 class="brand-title" style="font-size: 0.95rem;">Tutor ColorSense</h2>
+                    <div class="brand-subtitle">Asistente de Colorimetría IA</div>
+                </div>
+            </div>
+        </header>
+
+        <div class="chat-messages" id="chatStream" role="log" aria-live="polite">
+            <div class="message">
+                <div class="msg-bubble">
+                    Hola. Soy tu asistente especializado en colorimetría, contrastes y calibración neuronal. Pregúntame sobre los valores actuales o cómo mejorar tus muestras.
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-input-row">
+            <input type="text" class="input-text" id="chatInput" placeholder="Escribe una consulta..." autocomplete="off">
+            <button class="btn btn-secondary" id="btnChatSend">Enviar</button>
+        </div>
+    </section>
+
+</main>
+
+<script>
+(function() {
+    'use strict';
+
+    if (window.location.protocol === 'file:') {
+        document.getElementById('fileAlert').classList.add('show');
+    }
+
+    const video = document.getElementById('webcam');
+    const overlay = document.getElementById('overlay');
+    const sampleCanvas = document.getElementById('sample');
+    const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+    const overlayCtx = overlay.getContext('2d');
+
+    const btnToggleCam = document.getElementById('btnToggleCam');
+    const btnCamText = document.getElementById('btnCamText');
+    const btnSwitchCam = document.getElementById('btnSwitchCam');
+    const btnFreeze = document.getElementById('btnFreeze');
+    const videoPlaceholder = document.getElementById('videoPlaceholder');
+    const hudStatus = document.getElementById('hudStatus');
+    const hudDot = document.getElementById('hudDot');
+    const hudText = document.getElementById('hudText');
+
+    const sampleSwatch = document.getElementById('sampleSwatch');
+    const valRgb = document.getElementById('valRgb');
+    const valHex = document.getElementById('valHex');
+    const valHsv = document.getElementById('valHsv');
+
+    const predMain = document.getElementById('predMain');
+    const confPct = document.getElementById('confPct');
+    const confBar = document.getElementById('confBar');
+
+    const learnInput = document.getElementById('learnInput');
+    const btnLearn = document.getElementById('btnLearn');
+    const learnedChips = document.getElementById('learnedChips');
+    const samplesCount = document.getElementById('samplesCount');
+    const stTotalSamples = document.getElementById('stTotalSamples');
+    const stFps = document.getElementById('stFps');
+
+    const chatStream = document.getElementById('chatStream');
+    const chatInput = document.getElementById('chatInput');
+    const btnChatSend = document.getElementById('btnChatSend');
+    const badgeBackend = document.getElementById('badgeBackend');
+    const badgeState = document.getElementById('badgeState');
+
+    let stream = null;
+    let isStreaming = false;
+    let isPaused = false;
+    let useFrontCamera = true;
+    let animationFrameId = null;
+
+    let currentColor = { r: 0, g: 0, b: 0, h: 0, s: 0, v: 0, hex: '#000000' };
+    let trainingData = [];
+
+    // Inicializar TensorFlow.js de forma robusta
+    async function initTF() {
+        try {
+            await tf.ready();
+            await tf.setBackend('webgl').catch(() => tf.setBackend('cpu'));
+            badgeBackend.textContent = `TF.js · ${tf.getBackend().toUpperCase()}`;
+        } catch (e) {
+            badgeBackend.textContent = 'TF.js · CPU';
+        }
+    }
+    initTF();
+
+    function rgbToHsv(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        let max = Math.max(r, g, b), min = Math.min(r, g, b);
+        let h, s, v = max, d = max - min;
+        s = max === 0 ? 0 : d / max;
+        if (max === min) { h = 0; } else {
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+        return { h: Math.round(h * 360), s: Math.round(s * 100), v: Math.round(v * 100) };
+    }
+
+    function rgbToHex(r, g, b) {
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+    }
+
+    function classifyColor(r, g, b, h, s, v) {
+        if (trainingData.length > 0) {
+            let bestMatch = null, minDistance = Infinity;
+            for (let item of trainingData) {
+                let [fr, fg, fb, fh, fs, fv] = item.features;
+                let dist = Math.abs(r - fr) * 0.3 + Math.abs(g - fg) * 0.3 + Math.abs(b - fb) * 0.3 + Math.abs(h - fh) * 0.5;
+                if (dist < minDistance) { minDistance = dist; bestMatch = item.label; }
+            }
+            let confidence = Math.max(0, Math.min(100, Math.round(100 - (minDistance / 3))));
+            if (confidence > 35) return { label: bestMatch, confidence };
+        }
+
+        if (v < 15) return { label: 'Negro', confidence: 95 };
+        if (v > 88 && s < 12) return { label: 'Blanco', confidence: 95 };
+        if (s < 15) return { label: 'Gris Neutro', confidence: 90 };
+
+        let label = 'Desconocido';
+        if (h < 15 || h >= 345) label = 'Rojo';
+        else if (h >= 15 && h < 45) label = 'Naranja';
+        else if (h >= 45 && h < 70) label = 'Amarillo';
+        else if (h >= 70 && h < 165) label = 'Verde';
+        else if (h >= 165 && h < 260) label = 'Azul';
+        else if (h >= 260 && h < 315) label = 'Púrpura';
+        else if (h >= 315 && h < 345) label = 'Rosa';
+
+        return { label, confidence: 82 };
+    }
+
+    async function toggleCamera() {
+        if (isStreaming) {
+            stopCamera();
+        } else {
+            await startCamera();
+        }
+    }
+
+    async function startCamera() {
+        try {
+            hudText.textContent = 'Solicitando acceso...';
+            
+            const constraints = {
+                audio: false,
+                video: {
+                    facingMode: useFrontCamera ? 'user' : 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+            
+            await video.play().catch(() => {});
+
+            isStreaming = true;
+            videoPlaceholder.classList.add('hidden');
+            hudStatus.classList.add('active');
+            hudText.textContent = 'Cámara Activa';
+            badgeState.textContent = 'En vivo';
+            badgeState.classList.add('live');
+            btnCamText.textContent = 'Apagar Cámara';
+            btnSwitchCam.disabled = false;
+            btnFreeze.disabled = false;
+            btnLearn.disabled = false;
+
+            requestAnimationFrame(processFrame);
+        } catch (err) {
+            console.error("Error al iniciar cámara:", err);
+            hudText.textContent = 'Error de acceso';
+            alert('No se pudo acceder a la cámara. Verifica que hayas concedido los permisos en tu navegador.');
+        }
+    }
+
+    function stopCamera() {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        isStreaming = false;
+        video.srcObject = null;
+        videoPlaceholder.classList.remove('hidden');
+        hudStatus.classList.remove('active');
+        hudText.textContent = 'Cámara detenida';
+        badgeState.textContent = 'Inactivo';
+        badgeState.classList.remove('live');
+        btnCamText.textContent = 'Iniciar Cámara';
+        btnSwitchCam.disabled = true;
+        btnFreeze.disabled = true;
+        btnLearn.disabled = true;
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    }
+
+    btnToggleCam.addEventListener('click', toggleCamera);
+    
+    btnSwitchCam.addEventListener('click', async () => {
+        useFrontCamera = !useFrontCamera;
+        if (isStreaming) {
+            stopCamera();
+            await startCamera();
+        }
+    });
+
+    btnFreeze.addEventListener('click', () => {
+        isPaused = !isPaused;
+        if (isPaused) {
+            video.pause();
+            btnFreeze.innerHTML = '▶ Reanudar';
+            hudText.textContent = 'Video pausado';
+        } else {
+            video.play();
+            btnFreeze.innerHTML = '⏸ Pausar';
+            hudText.textContent = 'Cámara Activa';
+            requestAnimationFrame(processFrame);
+        }
+    });
+
+    let frameCount = 0, fpsTimer = performance.now();
+    function processFrame(now) {
+        if (!isStreaming || isPaused) return;
+
+        frameCount++;
+        if (now - fpsTimer >= 1000) {
+            stFps.textContent = Math.round((frameCount * 1000) / (now - fpsTimer));
+            frameCount = 0; fpsTimer = now;
+        }
+
+        const vw = video.videoWidth, vh = video.videoHeight;
+        if (vw > 0 && vh > 0) {
+            sampleCanvas.width = vw; 
+            sampleCanvas.height = vh;
+            sampleCtx.drawImage(video, 0, 0, vw, vh);
+
+            const sampleSize = 20;
+            const px = sampleCtx.getImageData(Math.floor(vw/2 - sampleSize/2), Math.floor(vh/2 - sampleSize/2), sampleSize, sampleSize).data;
+            
+            let r = 0, g = 0, b = 0, count = 0;
+            for (let i = 0; i < px.length; i += 4) {
+                r += px[i]; g += px[i+1]; b += px[i+2]; count++;
+            }
+            r = Math.round(r/count); g = Math.round(g/count); b = Math.round(b/count);
+
+            currentColor = { r, g, b, ...rgbToHsv(r, g, b), hex: rgbToHex(r, g, b) };
+
+            sampleSwatch.style.background = currentColor.hex;
+            valRgb.textContent = `rgb(${r}, ${g}, ${b})`;
+            valHex.innerHTML = `<b>${currentColor.hex.toUpperCase()}</b>`;
+            valHsv.textContent = `${currentColor.h}°, ${currentColor.s}%, ${currentColor.v}%`;
+
+            const pred = classifyColor(r, g, b, currentColor.h, currentColor.s, currentColor.v);
+            predMain.textContent = pred.label;
+            predMain.style.color = currentColor.hex;
+            confPct.textContent = `${pred.confidence}%`;
+            confBar.style.width = `${pred.confidence}%`;
+        }
+        animationFrameId = requestAnimationFrame(processFrame);
+    }
+
+    function drawOverlay() {
+        const ow = overlay.clientWidth, oh = overlay.clientHeight;
+        overlay.width = ow; overlay.height = oh;
+        overlayCtx.clearRect(0, 0, ow, oh);
+
+        const rx = ow / 2, ry = oh / 2, size = 30;
+        overlayCtx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+        overlayCtx.lineWidth = 1.5;
+        
+        overlayCtx.beginPath();
+        overlayCtx.strokeRect(rx - size, ry - size, size * 2, size * 2);
+        overlayCtx.fillStyle = '#ffffff';
+        overlayCtx.fillRect(rx - 1, ry - 1, 2, 2);
+        
+        requestAnimationFrame(drawOverlay);
+    }
+    requestAnimationFrame(drawOverlay);
+
+    btnLearn.addEventListener('click', () => {
+        const label = learnInput.value.trim();
+        if (!label) return;
+
+        trainingData.push({
+            features: [currentColor.r, currentColor.g, currentColor.b, currentColor.h, currentColor.s, currentColor.v],
+            label,
+            hex: currentColor.hex
+        });
+
+        samplesCount.textContent = `${trainingData.length} muestras`;
+        stTotalSamples.textContent = trainingData.length;
+        learnInput.value = '';
+        updateChips();
+    });
+
+    function updateChips() {
+        learnedChips.innerHTML = '';
+        trainingData.forEach((item, idx) => {
+            const chip = document.createElement('div');
+            chip.className = 'chip';
+            chip.innerHTML = `<div class="chip-dot" style="background:${item.hex}"></div><span>${item.label}</span><button class="chip-del" data-i="${idx}">&times;</button>`;
+            learnedChips.appendChild(chip);
+        });
+        learnedChips.querySelectorAll('.chip-del').forEach(b => {
+            b.addEventListener('click', (e) => {
+                trainingData.splice(parseInt(e.target.dataset.i), 1);
+                samplesCount.textContent = `${trainingData.length} muestras`;
+                stTotalSamples.textContent = trainingData.length;
+                updateChips();
+            });
+        });
+    }
+
+    function addMessage(sender, text) {
+        const div = document.createElement('div');
+        div.className = `message ${sender}`;
+        div.innerHTML = `<div class="msg-bubble">${text}</div>`;
+        chatStream.appendChild(div);
+        chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    btnChatSend.addEventListener('click', () => {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        addMessage('user', text);
+        chatInput.value = '';
+
+        setTimeout(() => {
+            let reply = `Analizando color actual (${currentColor.hex.toUpperCase()}): `;
+            const query = text.toLowerCase();
+            if (query.includes('armonía') || query.includes('armonia')) {
+                reply += `Para este matiz, puedes utilizar colores complementarios o análogos en el círculo cromático para lograr un contraste visual fuerte y profesional.`;
+            } else if (query.includes('rgb') || query.includes('hex')) {
+                reply += `Los valores actuales son RGB(${currentColor.r}, ${currentColor.g}, ${currentColor.b}) y HEX ${currentColor.hex.toUpperCase()}.`;
+            } else {
+                reply += `Este tono tiene una luminosidad de ${currentColor.v}% y una saturación de ${currentColor.s}%. ¿Te gustaría enseñarlo al clasificador neuronal?`;
+            }
+            addMessage('assistant', reply);
+        }, 500);
+    });
+
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') btnChatSend.click();
+    });
+
+})();
+</script>
+</body>
+</html>
